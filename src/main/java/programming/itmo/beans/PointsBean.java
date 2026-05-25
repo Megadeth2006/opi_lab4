@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.primefaces.PrimeFaces;
 import programming.itmo.config.AppStrings;
+import programming.itmo.mbeans.JmxRegistry;
 import programming.itmo.model.PointDTO;
 import programming.itmo.util.CheckAreaUtil;
 
@@ -32,6 +33,7 @@ public class PointsBean implements Serializable {
     private boolean inArea;
     private String hiddenX;
     private String hiddenY;
+    private String graphClick;
 
 
     @PostConstruct
@@ -44,6 +46,7 @@ public class PointsBean implements Serializable {
 
     public void check() {
         boolean bulletHit = false;
+        boolean pointProcessed = false;
         
         try {
             // Получаем значения из скрытых полей или основных полей
@@ -51,25 +54,34 @@ public class PointsBean implements Serializable {
                 ? new BigDecimal(hiddenY) : y;
             
             // Определяем R (hiddenR приоритетнее для клика по графику)
+            boolean svgClick = Boolean.parseBoolean(graphClick);
             BigDecimal rValue = (hiddenR != null && hiddenR.compareTo(BigDecimal.ZERO) != 0) 
                 ? hiddenR : r;
             
             if (yValue != null && rValue != null) {
                 // Если hiddenX задан (из чекбоксов), обрабатываем все X
                 if (hiddenX != null && !hiddenX.isEmpty()) {
-            String[] xs = hiddenX.split(AppStrings.get("points.hiddenX.separator"));
-            for (String xStr : xs) {
-                xStr = xStr.trim();
-                if (!xStr.isEmpty()) {
-                        BigDecimal currentX = new BigDecimal(xStr);
+                    String[] xs = hiddenX.split(AppStrings.get("points.hiddenX.separator"));
+                    for (String xStr : xs) {
+                        xStr = xStr.trim();
+                        if (!xStr.isEmpty()) {
+                            BigDecimal currentX = new BigDecimal(xStr);
                             boolean pointInArea = checkAreaUtil.process(currentX, yValue, rValue);
+                            JmxRegistry.getPointStatistics().registerPoint(pointInArea);
+                            pointProcessed = true;
                             if (pointInArea) bulletHit = true;
                         }
                     }
                 }
             }
+
+            if (svgClick && pointProcessed) {
+                JmxRegistry.getClickInterval().registerClick();
+            }
         } catch (NumberFormatException e) {
             bulletHit = false;
+        } finally {
+            graphClick = Boolean.FALSE.toString();
         }
 
         PrimeFaces.current().ajax().addCallbackParam(AppStrings.get("points.callback.bulletHit"), bulletHit);

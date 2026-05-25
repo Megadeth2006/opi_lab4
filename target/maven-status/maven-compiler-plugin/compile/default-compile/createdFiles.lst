@@ -1,0 +1,14 @@
+programming/itmo/listeners/JmxContextListener.class
+programming/itmo/config/AppStrings.class
+programming/itmo/mbeans/PointStatisticsMBean.class
+programming/itmo/mbeans/JmxRegistry.class
+programming/itmo/repositories/PointRepository.class
+programming/itmo/beans/PointsBean.class
+programming/itmo/mbeans/ClickIntervalMBean.class
+programming/itmo/model/PointDTO.class
+programming/itmo/util/CheckAreaUtil.class
+programming/itmo/entities/PointEntity.class
+programming/itmo/repositories/PointRepositoryORM.class
+programming/itmo/Lab3Launcher.class
+programming/itmo/mbeans/ClickInterval.class
+programming/itmo/mbeans/PointStatistics.class
