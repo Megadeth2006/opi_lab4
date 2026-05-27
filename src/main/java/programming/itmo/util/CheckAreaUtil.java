@@ -16,11 +16,15 @@ public class CheckAreaUtil implements Serializable {
     @ManagedProperty("#{pointRepository}")
     private PointRepository pointRepository;
 
-    public boolean process(BigDecimal x, BigDecimal y, BigDecimal r) {
+    public PointDTO createPoint(BigDecimal x, BigDecimal y, BigDecimal r) {
         boolean result = check(x, y, r);
         PointDTO pointDTO = new PointDTO(x, y, r, result);
         pointRepository.save(pointDTO);
-        return result;
+        return pointDTO;
+    }
+
+    public boolean process(BigDecimal x, BigDecimal y, BigDecimal r) {
+        return createPoint(x, y, r).isInArea();
     }
 
     public boolean check(BigDecimal x, BigDecimal y, BigDecimal r) {

@@ -3,6 +3,8 @@ package programming.itmo.beans;
 import com.google.gson.Gson;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import programming.itmo.util.CheckAreaUtil;
 @Setter
 @Getter
 public class PointsBean implements Serializable {
+    private static final Gson GSON = new Gson();
 
     @ManagedProperty("#{checkAreaUtil}")
     private CheckAreaUtil checkAreaUtil;
@@ -34,7 +37,8 @@ public class PointsBean implements Serializable {
     private String hiddenX;
     private String hiddenY;
     private String graphClick;
-
+    private List<PointDTO> historicalPoints;
+    private boolean historicalPointsLoaded;
 
     @PostConstruct
     public void init() {
@@ -42,34 +46,36 @@ public class PointsBean implements Serializable {
         for (int i = -5; i <= 1; i++) {
             xList.put(String.valueOf(i), false);
         }
+        loadHistoricalPoints();
     }
 
     public void check() {
         boolean bulletHit = false;
         boolean pointProcessed = false;
-        
+
         try {
-            // Получаем значения из скрытых полей или основных полей
-            BigDecimal yValue = (hiddenY != null && !hiddenY.isEmpty()) 
-                ? new BigDecimal(hiddenY) : y;
-            
-            // Определяем R (hiddenR приоритетнее для клика по графику)
+            BigDecimal yValue = (hiddenY != null && !hiddenY.isEmpty())
+                    ? new BigDecimal(hiddenY)
+                    : y;
+
             boolean svgClick = Boolean.parseBoolean(graphClick);
-            BigDecimal rValue = (hiddenR != null && hiddenR.compareTo(BigDecimal.ZERO) != 0) 
-                ? hiddenR : r;
-            
-            if (yValue != null && rValue != null) {
-                // Если hiddenX задан (из чекбоксов), обрабатываем все X
-                if (hiddenX != null && !hiddenX.isEmpty()) {
-                    String[] xs = hiddenX.split(AppStrings.get("points.hiddenX.separator"));
-                    for (String xStr : xs) {
-                        xStr = xStr.trim();
-                        if (!xStr.isEmpty()) {
-                            BigDecimal currentX = new BigDecimal(xStr);
-                            boolean pointInArea = checkAreaUtil.process(currentX, yValue, rValue);
-                            JmxRegistry.getPointStatistics().registerPoint(pointInArea);
-                            pointProcessed = true;
-                            if (pointInArea) bulletHit = true;
+            BigDecimal rValue = (hiddenR != null && hiddenR.compareTo(BigDecimal.ZERO) != 0)
+                    ? hiddenR
+                    : r;
+
+            if (yValue != null && rValue != null && hiddenX != null && !hiddenX.isEmpty()) {
+                loadHistoricalPoints();
+                String[] xs = hiddenX.split(AppStrings.get("points.hiddenX.separator"));
+                for (String xStr : xs) {
+                    xStr = xStr.trim();
+                    if (!xStr.isEmpty()) {
+                        BigDecimal currentX = new BigDecimal(xStr);
+                        PointDTO point = checkAreaUtil.createPoint(currentX, yValue, rValue);
+                        historicalPoints.add(point);
+                        JmxRegistry.getPointStatistics().registerPoint(point.isInArea());
+                        pointProcessed = true;
+                        if (point.isInArea()) {
+                            bulletHit = true;
                         }
                     }
                 }
@@ -86,6 +92,7 @@ public class PointsBean implements Serializable {
 
         PrimeFaces.current().ajax().addCallbackParam(AppStrings.get("points.callback.bulletHit"), bulletHit);
     }
+
     public void resetXList() {
         for (String key : xList.keySet()) {
             xList.put(key, false);
@@ -94,53 +101,77 @@ public class PointsBean implements Serializable {
     }
 
     public void resetY() {
-        this.y = null;
-        this.hiddenY = AppStrings.get("points.value.empty");
+        y = null;
+        hiddenY = AppStrings.get("points.value.empty");
     }
 
     public void updateFilteredPoints() {
-        List<PointDTO> allPoints = checkAreaUtil.getPointRepository().getAllPoints();
-        // пересчитываем попадание точек с текущим максимальным R
-        if (currentMaxR != null && currentMaxR.compareTo(BigDecimal.ZERO) > 0) {
-            allPoints.forEach(p -> {
-                p.setInArea(checkAreaUtil.check(p.getX(), p.getY(), currentMaxR));
-            });
-        }
-        String json = new Gson().toJson(allPoints);
-        PrimeFaces.current().ajax().addCallbackParam(AppStrings.get("points.callback.json"), json);
+        PrimeFaces.current().ajax().addCallbackParam(
+                AppStrings.get("points.callback.json"),
+                GSON.toJson(buildProjectedPoints())
+        );
     }
-    
+
     public void setCurrentMaxR() {
         FacesContext context = FacesContext.getCurrentInstance();
-        String maxRParam = context.getExternalContext().getRequestParameterMap().get(AppStrings.get("points.request.maxR"));
+        String maxRParam = context.getExternalContext().getRequestParameterMap()
+                .get(AppStrings.get("points.request.maxR"));
         if (maxRParam != null && !maxRParam.isEmpty()) {
             try {
-                this.currentMaxR = new BigDecimal(maxRParam);
+                currentMaxR = new BigDecimal(maxRParam);
             } catch (NumberFormatException e) {
-                this.currentMaxR = BigDecimal.ZERO;
+                currentMaxR = BigDecimal.ZERO;
             }
         } else {
-            this.currentMaxR = BigDecimal.ZERO;
+            currentMaxR = BigDecimal.ZERO;
         }
     }
-
-
 
     public void resetHiddenR() {
         hiddenR = BigDecimal.ZERO;
     }
 
     public List<PointDTO> getAllPoints() {
-        return checkAreaUtil.getPointRepository().getAllPoints();
+        loadHistoricalPoints();
+        return new ArrayList<>(historicalPoints);
     }
 
     public List<PointDTO> getReversedPoints() {
         List<PointDTO> points = getAllPoints();
-        java.util.Collections.reverse(points);
+        Collections.reverse(points);
         return points;
     }
 
     public Object getxList() {
         return xList;
+    }
+
+    private void loadHistoricalPoints() {
+        if (historicalPointsLoaded) {
+            return;
+        }
+
+        historicalPoints = new ArrayList<>();
+        if (checkAreaUtil != null && checkAreaUtil.getPointRepository() != null) {
+            historicalPoints.addAll(checkAreaUtil.getPointRepository().getAllPoints());
+        }
+        historicalPointsLoaded = true;
+    }
+
+    private List<PointDTO> buildProjectedPoints() {
+        loadHistoricalPoints();
+
+        List<PointDTO> projectedPoints = new ArrayList<>(historicalPoints.size());
+        BigDecimal projectionR = currentMaxR;
+        boolean shouldRecalculate = projectionR != null && projectionR.compareTo(BigDecimal.ZERO) > 0;
+
+        for (PointDTO point : historicalPoints) {
+            boolean projectedInArea = shouldRecalculate
+                    ? checkAreaUtil.check(point.getX(), point.getY(), projectionR)
+                    : point.isInArea();
+            projectedPoints.add(new PointDTO(point.getX(), point.getY(), point.getR(), projectedInArea));
+        }
+
+        return projectedPoints;
     }
 }

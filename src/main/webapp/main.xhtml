@@ -114,9 +114,9 @@
                                      requiredMessage="R is required">
                             <f:convertNumber maxFractionDigits="2" minFractionDigits="0" />
                             <f:validateDoubleRange minimum="1" maximum="4" />
-                            <p:ajax event="keyup"
+                            <p:ajax event="blur"
                                     update="rMessage"
-                                    oncomplete="syncHiddenR(); updateGraph(document.getElementById('rInput').value);"/>
+                                    oncomplete="syncHiddenR();"/>
                         </h:inputText>
                         <h:message id="rMessage" for="rInput" style="color:red; font-size:12px;" />
                     </div>

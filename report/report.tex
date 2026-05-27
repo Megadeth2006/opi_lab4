@@ -1,0 +1,197 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\geometry{margin=2cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue
+}
+
+\newcommand{\placeholderfigure}[2]{
+    \begin{figure}[H]
+        \centering
+        \fbox{
+            \parbox[c][0.28\textheight][c]{0.9\textwidth}{
+                \centering
+                \textbf{#1}\\[0.5em]
+                Вставить скриншот: #2
+            }
+        }
+        \caption{#1}
+    \end{figure}
+}
+
+\title{Отчёт по мониторингу и профилированию веб-приложения}
+\author{Студент: \underline{\hspace{6cm}}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Цель работы}
+Целью работы является мониторинг Java EE-приложения при помощи VisualVM и профилировщика IDE, анализ пользовательских MBean, исследование использования памяти JVM, а также локализация и устранение проблемы производительности.
+
+\section{Исходные данные}
+В рамках лабораторной работы в приложении уже были реализованы два пользовательских MBean:
+\begin{itemize}[leftmargin=*]
+    \item \texttt{PointStatistics} --- считает общее число установленных точек, число промахов и число промахов подряд;
+    \item \texttt{ClickInterval} --- считает средний интервал между кликами пользователя по координатной плоскости.
+\end{itemize}
+
+Для мониторинга использовались утилиты \texttt{VisualVM} и встроенный профилировщик IDE. Приложение запускалось на сервере \texttt{<указать сервер и версию>} с JVM \texttt{<указать JVM и версию>}.
+
+\section{Мониторинг в VisualVM}
+\subsection{Подключение к приложению}
+Для подключения к приложению в VisualVM был выполнен следующий порядок действий:
+\begin{enumerate}[leftmargin=*]
+    \item Запустить сервер приложений с развернутым \texttt{WAR}-архивом.
+    \item Открыть \texttt{VisualVM} и дождаться появления процесса сервера в разделе \texttt{Local}.
+    \item Выбрать процесс JVM, в котором выполняется приложение.
+    \item Перейти на вкладку \texttt{MBeans} и убедиться, что зарегистрированы пользовательские объекты \texttt{programming.itmo:type=PointStatistics} и \texttt{programming.itmo:type=ClickInterval}.
+\end{enumerate}
+
+\subsection{Наблюдение за MBean}
+Для получения изменяющихся показаний был выполнен сценарий:
+\begin{enumerate}[leftmargin=*]
+    \item Несколько раз отправить точки через форму.
+    \item Несколько раз кликнуть по координатной плоскости.
+    \item Сформировать последовательность из трёх промахов подряд.
+    \item Наблюдать изменение атрибутов MBean во времени.
+\end{enumerate}
+
+В ходе наблюдения должны изменяться следующие показатели:
+\begin{itemize}[leftmargin=*]
+    \item \texttt{PointStatistics.TotalPoints};
+    \item \texttt{PointStatistics.MissedPoints};
+    \item \texttt{PointStatistics.ConsecutiveMisses};
+    \item \texttt{ClickInterval.ClickCount};
+    \item \texttt{ClickInterval.IntervalCount};
+    \item \texttt{ClickInterval.AverageIntervalMillis}.
+\end{itemize}
+
+\placeholderfigure{График изменения показаний MBean}{графики из вкладки MBeans / Monitor в VisualVM}
+
+\subsection{Анализ памяти JVM}
+Для анализа памяти использовалась вкладка \texttt{Sampler} или \texttt{Profiler} в режиме памяти:
+\begin{enumerate}[leftmargin=*]
+    \item Открыть анализ памяти для процесса приложения.
+    \item Выполнить пользовательский сценарий с добавлением большого числа точек.
+    \item Снять heap histogram или список классов по объёму занятой памяти.
+    \item Найти класс, экземпляры которого суммарно занимают наибольший объём памяти.
+    \item Установить, в экземплярах какого пользовательского класса содержатся объекты этого типа.
+\end{enumerate}
+
+\noindent
+\textbf{Результат анализа памяти:}
+\begin{itemize}[leftmargin=*]
+    \item класс, занявший наибольший объём памяти: \texttt{<заполнить по VisualVM>};
+    \item пользовательский класс, в экземплярах которого находятся эти объекты: \texttt{<заполнить по VisualVM>}.
+\end{itemize}
+
+\placeholderfigure{Результаты анализа памяти JVM}{скриншот heap histogram / memory sampler}
+
+\section{Локализация проблемы производительности}
+\subsection{Описание выявленной проблемы}
+В исходной версии приложения производительная проблема проявлялась при изменении параметра \texttt{R}:
+\begin{itemize}[leftmargin=*]
+    \item при каждом изменении поля \texttt{R} выполнялся AJAX-запрос на сервер;
+    \item серверный метод \texttt{PointsBean.updateFilteredPoints()} каждый раз заново считывал все точки из базы данных;
+    \item после чтения всех точек выполнялись повторный пересчёт попадания для каждой точки и полная сериализация списка в JSON;
+    \item при наборе значения \texttt{R} это приводило к серии частых одинаковых запросов и лишней нагрузке на CPU и БД.
+\end{itemize}
+
+Следствием были лишние вызовы методов доступа к данным, рост числа коротких серверных запросов и избыточные затраты времени на обновление графика.
+
+\subsection{Как проблема была локализована}
+Для локализации использовался следующий алгоритм:
+\begin{enumerate}[leftmargin=*]
+    \item Запустить приложение и подключиться к его JVM из \texttt{VisualVM}.
+    \item Открыть профилирование CPU.
+    \item Начать запись профиля.
+    \item Многократно изменять значение \texttt{R} в форме, не отправляя новые точки.
+    \item Остановить профилирование и отсортировать методы по Self Time / Total Time.
+    \item Проверить, что среди горячих методов находятся:
+    \begin{itemize}[leftmargin=*]
+        \item \texttt{programming.itmo.beans.PointsBean.updateFilteredPoints};
+        \item \texttt{programming.itmo.repositories.PointRepositoryORM.getAllPoints};
+        \item методы сериализации JSON и создания объектов \texttt{PointDTO}.
+    \end{itemize}
+    \item Повторить тот же сценарий во встроенном профилировщике IDE для подтверждения результатов.
+\end{enumerate}
+
+\placeholderfigure{Локализация горячих методов в VisualVM}{скриншот CPU profiler с методом updateFilteredPoints}
+
+\placeholderfigure{Подтверждение в профилировщике IDE}{скриншот hotspot / call tree из IntelliJ IDEA, NetBeans или Eclipse}
+
+\subsection{Внесённые изменения}
+Для устранения проблемы были выполнены следующие изменения:
+\begin{itemize}[leftmargin=*]
+    \item в \texttt{PointsBean} добавлен кэш списка исторических точек в рамках сессии пользователя;
+    \item метод обновления графика переведён на работу с кэшированными точками вместо повторного чтения всей таблицы БД при каждом изменении \texttt{R};
+    \item для отрисовки графика создаётся отдельная проекция точек с пересчитанным признаком попадания, чтобы не портить исходные данные таблицы;
+    \item в \texttt{draw.js} добавлена debounce-синхронизация с сервером, чтобы не отправлять каскад AJAX-запросов при быстром наборе \texttt{R};
+    \item серверная валидация поля \texttt{R} переведена с события \texttt{keyup} на \texttt{blur}, так как интерактивная перерисовка графика уже выполняется на клиенте.
+\end{itemize}
+
+\subsection{Файлы, в которых выполнены изменения}
+\begin{itemize}[leftmargin=*]
+    \item \texttt{src/main/java/programming/itmo/beans/PointsBean.java};
+    \item \texttt{src/main/java/programming/itmo/util/CheckAreaUtil.java};
+    \item \texttt{src/main/webapp/main.xhtml};
+    \item \texttt{src/main/webapp/resources/scripts/draw.js}.
+\end{itemize}
+
+\subsection{Описание путей устранения проблемы}
+Основной путь устранения заключался не в оптимизации одной операции, а в сокращении числа бессмысленных повторений:
+\begin{itemize}[leftmargin=*]
+    \item исключено повторное чтение одной и той же коллекции точек из БД при каждом изменении \texttt{R};
+    \item уменьшено количество серверных обращений при вводе значения \texttt{R};
+    \item сохранено текущее пользовательское поведение интерфейса: область продолжает перерисовываться сразу, а данные для графика приходят с сервера заметно реже.
+\end{itemize}
+
+\subsection{Проверка результата}
+После внесения изменений необходимо повторить исходный сценарий профилирования:
+\begin{enumerate}[leftmargin=*]
+    \item снова запустить CPU profiling;
+    \item повторить многократное изменение \texttt{R};
+    \item сравнить число вызовов и суммарное время работы методов до и после исправления;
+    \item зафиксировать уменьшение нагрузки на методы доступа к данным и обновления списка точек.
+\end{enumerate}
+
+\noindent
+\textbf{Итог сравнения до и после исправления:}
+\begin{itemize}[leftmargin=*]
+    \item количество вызовов \texttt{PointRepositoryORM.getAllPoints}: \texttt{<до>} $\rightarrow$ \texttt{<после>};
+    \item суммарное время в \texttt{PointsBean.updateFilteredPoints}: \texttt{<до>} $\rightarrow$ \texttt{<после>};
+    \item субъективная реакция интерфейса: \texttt{<описать после замеров>}.
+\end{itemize}
+
+\placeholderfigure{Сравнение профиля до и после исправления}{скриншоты hotspot до и после оптимизации}
+
+\section{Воспроизводимость}
+Для демонстрации преподавателю процесс можно воспроизвести следующим образом:
+\begin{enumerate}[leftmargin=*]
+    \item запустить сервер приложений с развернутым проектом;
+    \item открыть \texttt{VisualVM} и подключиться к JVM сервера;
+    \item показать вкладку \texttt{MBeans} и изменение пользовательских атрибутов во времени;
+    \item открыть анализ памяти и показать класс, занимающий наибольший объём;
+    \item запустить CPU profiling;
+    \item воспроизвести сценарий многократного изменения \texttt{R};
+    \item показать, какие методы были горячими до исправления и как изменился профиль после исправления.
+\end{enumerate}
+
+\section{Вывод}
+В ходе работы были исследованы пользовательские MBean приложения, выполнен анализ использования памяти JVM, локализована проблема производительности, связанная с повторными запросами и лишней обработкой данных при изменении параметра \texttt{R}, и предложено исправление, уменьшающее нагрузку на серверную часть приложения.
+
+\end{document}
